@@ -1,0 +1,15 @@
+{
+    "base_url": "https://push.ducksboard.com/",
+    "expected_status": [200, 400, 401, 403, 404, 413, 500],
+    "version": "0.1",
+    "name": "push api",
+    "methods": {                                        
+        "push_value": {
+            "path": "/values/:id/",
+            "description": "Push values to the user's dashboards.",
+            "required_params": ["id"],
+            "method": "POST",
+            "formats": ["json"]
+        }
+    }
+}

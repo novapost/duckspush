@@ -1,0 +1,167 @@
+{
+    "base_url": "https://app.ducksboard.com/",
+    "expected_status": [200, 400, 401, 404, 500],
+    "version": "0.1",
+    "name": "dashboard api",
+    "methods": {                                        
+        "read_dashboards": {
+            "path": "/api/dashboards/",
+            "description": "Get one the user's dashboards.",
+            "method": "GET",
+            "formats": ["json"]
+        },
+        "read_dashboard": {
+            "path": "/api/dashboards/:slug",
+            "description": "Get one of the user's dashboards.",
+            "required_params": ["slug"],
+            "method": "GET",
+            "formats": ["json"]
+        },
+        "create_dashboard": {
+            "path": "/api/dashboards/:slug",
+            "description": "Create a new dashboard.",
+            "required_params": ["slug"],
+            "method": "POST",
+            "formats": ["json"]
+        },
+        "update_dashboard": {
+            "path": "/api/dashboards/:slug",
+            "description": "Change a dashboard.",
+            "required_params": ["slug"],
+            "method": "PUT",
+            "formats": ["json"]
+        },
+        "delete_dashboard": {
+            "path": "/api/dashboards/:slug",
+            "description": "Delete a dashboard.",
+            "required_params": ["slug"],
+            "method": "DELETE",
+            "formats": ["json"]
+        },
+        "update_dashboard_access_time": {
+            "path": "/api/dashboards/:slug/accessed",
+            "description": "Update the access time of a dashboard.",
+            "required_params": ["slug"],
+            "method": "POST",
+            "formats": ["json"]
+        },
+        "get_dashboard_access_token": {
+            "path": "/api/dashboards/:slug/tokens",
+            "description": "Get one of the dashboard's access tokens.",
+            "required_params": ["slug"],
+            "method": "GET",
+            "formats": ["json"]
+        },
+        "post_dashboard_access_token": {
+            "path": "/api/dashboards/:slug/tokens",
+            "description": "Create a new access token for the dashboard with the given slug",
+            "required_params": ["slug"],
+            "method": "POST",
+            "formats": ["json"]
+        },                               
+        "read_widgets": {
+            "path": "/api/widgets/",
+            "description": "get a collection of widgets",
+            "required_params": ["slug"],
+            "method": "GET",
+            "formats": ["json"]
+        },
+        "read_widget": {
+            "path": "/api/widgets/:id",
+            "description": "get one of the user's widgets",
+            "required_params": ["id"],
+            "method": "GET",
+            "formats": ["json"]
+        },                               
+        "create_widget": {
+            "path": "/api/widgets/",
+            "description": "Create a new widget",
+            "method": "POST",
+            "formats": ["json"]
+        },                               
+        "create_widget_copy": {
+            "path": "/api/widgets/:id/copy",
+            "description": "Copy a widget to another dashboard, specified by a slug",
+            "required_params": ["id"],
+            "method": "POST",
+            "formats": ["json"]
+        },                               
+        "update_widget": {
+            "path": "/api/widgets/:id",
+            "description": "Update a widget",
+            "required_params": ["id"],    
+            "method": "PUT",
+            "formats": ["json"]
+        },                               
+        "delete_widget": {
+            "path": "/api/widgets/:id",
+            "description": "Delete a widget",
+            "required_params": ["id"],    
+            "method": "DELETE",
+            "formats": ["json"]
+        },
+         "update_widgets_positions": {
+            "path": "/api/widgets/positions",
+            "description": "Update the positions of multiple widgets at once",
+            "method": "POST",
+            "formats": ["json"]
+        },
+         "read_dashboard_widgets": {
+            "path": "/api/widgets/:slug/widgets/",
+            "description": "Get widgets of a dashboard",
+            "required_params": ["slug"],    
+            "method": "GET",
+            "formats": ["json"]
+        },
+         "read_accounts": {
+            "path": "/api/accounts/",
+            "description": "Get user's account",
+            "method": "GET",
+            "formats": ["json"]
+        },
+        "read_account": {
+            "path": "/api/accounts/:id",
+            "description": "Get one of the user account",
+            "required_params": ["id"],
+            "method": "GET",
+            "formats": ["json"]
+        },
+        "create_account": {
+            "path": "/api/accounts/",
+            "description": "Link a new account",
+            "method": "POST",
+            "formats": ["json"]
+        },
+        "delete_account": {
+            "path": "/api/accounts/:id",
+            "description": "Unlink an account",
+            "required_params": ["id"],
+            "method": "DELETE",
+            "formats": ["json"]
+        },
+        "read_user": {
+            "path": "/api/user",
+            "description": "Get the current user data.",
+            "method": "GET",
+            "formats": ["json"]
+        },
+        "update_user": {
+            "path": "/api/user",
+            "description": "Update the current user data.",
+            "method": "PUT",
+            "formats": ["json"]
+        },
+        "read_user_api_key": {
+            "path": "/api/user/api_key",
+            "description": "Get the current user api key.",
+            "method": "GET",
+            "formats": ["json"]
+        },
+        "reset_user_api_key": {
+            "path": "/api/user",
+            "description": "Reset the current user api_key.",
+            "method": "POST",
+            "formats": ["json"]
+        }                                                                                        
+   }
+}

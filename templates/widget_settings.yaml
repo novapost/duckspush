@@ -1,0 +1,15 @@
+{% for widget in widget_data %}
+- !Widget
+  id: {{widget.widget.id}}
+  kind: "{{widget.widget.kind}}"
+  title: "{{widget.widget.title}}"
+  endpoints:
+  {% for endpoint_id, endpoint_data in widget.slots.iteritems() %}
+  - !WidgetEndpoint 
+    subtitle: "{{endpoint_data.subtitle}}"
+    collector: !DataCollector
+      collector_func_name: Specify a collector function
+      func_kwargs: {}
+    endpoint_id: {{endpoint_data.label}}
+  {% endfor %}
+{% endfor %}

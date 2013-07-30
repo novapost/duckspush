@@ -1,0 +1,123 @@
+# -*- coding: iso-8859-1 -*-
+
+import gevent.monkey
+gevent.monkey.patch_all()
+import gevent
+
+import api
+import exc
+import collectors
+import time
+import yaml
+
+from ducksboard_publisher import PROJECT_ROOT
+from jinja2 import Environment, PackageLoader
+from os import path
+
+
+def init_publisher_settings(api_key):
+    env = Environment(loader=PackageLoader("ducksboard_tools",
+                                           "templates"))
+    dashboard_api_cli = api.get_api_cli(api_key, "dashboard")
+    widget_data = dashboard_api_cli.read_widgets()["data"]
+    custom_widgets = []
+
+    for w in widget_data:
+        kind = w["widget"]["kind"]
+        if kind.startswith("custom"):
+            custom_widgets.append(w)
+
+    config_path = path.join(PROJECT_ROOT, "widget_settings.yaml")
+    if not path.exists(config_path):
+        template = env.get_template("widget_settings.yaml")
+        template_string = template.render(widget_data=custom_widgets)
+        with open(config_path, "w") as config_file:
+            config_file.write(template_string.encode("utf-8"))
+
+
+class Widget(yaml.YAMLObject):
+    yaml_tag = u'!Widget'
+
+    def __init__(self, wid, title, kind, endpoints):
+        self.wid = wid
+        self.title = title
+        self.kind = kind
+        self.endpoints = endpoints
+
+    def collect_endpoints_data(self):
+        data = dict()
+        for e in self.endpoints:
+            data[e.endpoint_id] = e.collector.collect()
+        return data
+
+    def __str__(self):
+        return str(self.__dict__)
+
+
+class WidgetEndpoint(yaml.YAMLObject):
+
+    yaml_tag = u'!WidgetEndpoint'
+
+    def __init__(self, eid, subtitle, collector):
+        self.endpoint_id = eid
+        self.subtitle = subtitle
+        self.collector = collector
+
+    def __str__(self):
+        return str(self.__dict__)
+
+
+class DataCollector(yaml.YAMLObject):
+    yaml_tag = u'!DataCollector'
+
+    def __init__(self, collector_func_name, **kwargs):
+        self.collector_func_name = collector_func_name
+        self.func_kwargs = kwargs
+
+    def collect(self):
+        collect_func = getattr(collectors, self.collector_func_name)
+        return collect_func(**self.func_kwargs)
+
+    def __str__(self):
+        return str(self.__dict__)
+
+
+class DucksboardPublisher(object):
+
+    def __init__(self, api_key):
+        self.api_key = api_key
+        self.push_api_cli = api.get_api_cli(api_key, "push")
+
+    @property
+    def widgets(self):
+        config_path = path.join(PROJECT_ROOT, "widget_settings.yaml")
+        try:
+            with open(config_path, "r") as config_file:
+                widgets = yaml.load(config_file.read())
+        except IOError:
+            print "Error widget settings not found.Please init publisher settings first"
+        except yaml.YAMLError, e:
+            print "error while parsing conf_file", e
+        else:
+            for widget in widgets:
+                for endpoint in widget.endpoints:
+                    try:
+                        func_name = endpoint.collector.collector_func_name
+                        getattr(collectors, func_name)
+                    except AttributeError:
+                        raise exc.CollectorDoesNotExist(func_name, widget)
+            return widgets
+
+    def run(self):
+        while True:
+            widget_threads = dict()
+            endpoints_data = dict()
+            for widget in self.widgets:
+                widget_data = widget.collect_endpoints_data()
+                endpoints_data.update(widget_data)
+
+            for eid, data in endpoints_data.iteritems():
+                thread = gevent.spawn(self.push_api_cli.push_value, id=str(eid), data=data)
+                widget_threads["thread for endpoint %s" % eid] = thread
+            time.sleep(5)
+            gevent.joinall(widget_threads.values())
