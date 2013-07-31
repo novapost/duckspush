@@ -38,9 +38,9 @@ setup(name=NAME,
       install_requires=REQUIRES,
       entry_points={
         'console_scripts': [
-            'init_publisher_settings = ducksboard_publisher.publisher.init_publisher_settings',
-            'init_collect_project = ducksboard_publisher.publisher.init_collect_project',
-            'run_publisher = ducksboard_publisher.publisher.run_publisher',
+            'init_publisher_settings = ducksboard_publisher.publisher:init_publisher_settings',
+            'init_collect_project = ducksboard_publisher.publisher:init_collect_project',
+            'run_publisher = ducksboard_publisher.publisher:run_publisher',
             ]
         },
       )
