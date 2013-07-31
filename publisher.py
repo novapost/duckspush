@@ -69,10 +69,6 @@ class DataCollector(yaml.YAMLObject):
 class DucksboardPublisher(object):
 
     def __init__(self):
-        pub_settings_path = path.join(PROJECT_ROOT, "publisher_settings.yaml")
-        if not os.path.exists(pub_settings_path):
-            utils.generate_template("publisher_settings.yaml")
-
         self.push_api_cli = api.get_api_cli(
             api_key=self.settings.get("DUCKSBOARD_API_TOKEN"),
             api_name="push")
@@ -169,6 +165,12 @@ def run_publisher():
         gevent.signal(signal.SIGQUIT, gevent.shutdown)
     except KeyboardInterrupt:
         print "Stopping publisher"
+
+
+def init_publisher_settings():
+    pub_settings_path = path.join(PROJECT_ROOT, "publisher_settings.yaml")
+    if not os.path.exists(pub_settings_path):
+        utils.generate_template("publisher_settings.yaml")
 
 
 def init_collector_project():
