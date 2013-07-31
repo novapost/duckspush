@@ -3,38 +3,21 @@
 import gevent.monkey
 gevent.monkey.patch_all()
 import gevent
-
 import api
 import exc
-import collectors
+import os
 import time
+import utils
+import shutil
+import signal
 import yaml
 
 from ducksboard_publisher import PROJECT_ROOT
-from jinja2 import Environment, PackageLoader
+#from jinja2 import Environment, PackageLoader
 from os import path
 
 
-def init_publisher_settings(api_key):
-    env = Environment(loader=PackageLoader("ducksboard_tools",
-                                           "templates"))
-    dashboard_api_cli = api.get_api_cli(api_key, "dashboard")
-    widget_data = dashboard_api_cli.read_widgets()["data"]
-    custom_widgets = []
-
-    for w in widget_data:
-        kind = w["widget"]["kind"]
-        if kind.startswith("custom"):
-            custom_widgets.append(w)
-
-    config_path = path.join(PROJECT_ROOT, "widget_settings.yaml")
-    if not path.exists(config_path):
-        template = env.get_template("widget_settings.yaml")
-        template_string = template.render(widget_data=custom_widgets)
-        with open(config_path, "w") as config_file:
-            config_file.write(template_string.encode("utf-8"))
-
-
+## TODO break into multiple funcs
 class Widget(yaml.YAMLObject):
     yaml_tag = u'!Widget'
 
@@ -75,6 +58,7 @@ class DataCollector(yaml.YAMLObject):
         self.func_kwargs = kwargs
 
     def collect(self):
+        from collect_project import collectors
         collect_func = getattr(collectors, self.collector_func_name)
         return collect_func(**self.func_kwargs)
 
@@ -84,21 +68,64 @@ class DataCollector(yaml.YAMLObject):
 
 class DucksboardPublisher(object):
 
-    def __init__(self, api_key):
-        self.api_key = api_key
-        self.push_api_cli = api.get_api_cli(api_key, "push")
+    def __init__(self):
+        pub_settings_path = path.join(PROJECT_ROOT, "publisher_settings.yaml")
+        if not os.path.exists(pub_settings_path):
+            utils.generate_template("publisher_settings.yaml")
+
+        self.push_api_cli = api.get_api_cli(
+            api_key=self.settings.get("DUCKSBOARD_API_TOKEN"),
+            api_name="push")
+
+    def init_collector_project(self):
+        project_path = path.join(PROJECT_ROOT, "collect_project")
+        utils.mkdir_p(project_path)
+        try:
+            init_file_path = path.join(project_path, "__init__.py")
+            open(init_file_path, 'a').close()
+
+            utils.generate_template("collectors.py")
+
+            api_key = self.settings.get("DUCKSBOARD_API_TOKEN")
+            dashboard_api_cli = api.get_api_cli(api_key, "dashboard")
+            # handle exception in case of wrong api token publisher settings
+            widget_data = dashboard_api_cli.read_widgets()["data"]
+            custom_widgets = []
+
+            for w in widget_data:
+                kind = w["widget"]["kind"]
+                if kind.startswith("custom"):
+                    custom_widgets.append(w)
+            utils.generate_template("widget_settings.yaml",
+                                    widget_data=custom_widgets)
+        except Exception, e:
+        # replace by specific handled exception
+            shutil.rmtree(project_path)
+            raise e
+
+    @property
+    def settings(self):
+        settings_path = path.join(PROJECT_ROOT, "publisher_settings.yaml")
+        try:
+            with open(settings_path, "r") as config_file:
+                settings = yaml.load(config_file.read())
+        except IOError:
+            raise exc.PublisherSettingsDoesNotExist
+        else:
+            return settings
 
     @property
     def widgets(self):
-        config_path = path.join(PROJECT_ROOT, "widget_settings.yaml")
+        config_path = path.join(PROJECT_ROOT,
+                                "collect_project",
+                                "widget_settings.yaml")
         try:
             with open(config_path, "r") as config_file:
                 widgets = yaml.load(config_file.read())
         except IOError:
-            print "Error widget settings not found.Please init publisher settings first"
-        except yaml.YAMLError, e:
-            print "error while parsing conf_file", e
+            raise exc.CollectorProjectDoesNotExist
         else:
+            from collect_project import collectors
             for widget in widgets:
                 for endpoint in widget.endpoints:
                     try:
@@ -107,6 +134,16 @@ class DucksboardPublisher(object):
                     except AttributeError:
                         raise exc.CollectorDoesNotExist(func_name, widget)
             return widgets
+
+    def push_value(self, eid, data):
+        # We dont want to see the traceback on screen
+        # so specif exception handling here
+        #replace print by log message
+        try:
+            self.push_api_cli.push_value(id=str(eid),
+                                         data=data)
+        except Exception, e:
+            print e.message
 
     def run(self):
         while True:
@@ -117,7 +154,23 @@ class DucksboardPublisher(object):
                 endpoints_data.update(widget_data)
 
             for eid, data in endpoints_data.iteritems():
-                thread = gevent.spawn(self.push_api_cli.push_value, id=str(eid), data=data)
+                thread = gevent.spawn(self.push_value,
+                                      eid=str(eid),
+                                      data=data)
                 widget_threads["thread for endpoint %s" % eid] = thread
-            time.sleep(5)
+            time.sleep(self.settings.get("PUBLISHER_REFRESH_INTERVAL"))
             gevent.joinall(widget_threads.values())
+
+
+def run_publisher():
+    publisher = DucksboardPublisher()
+    try:
+        publisher.run()
+        gevent.signal(signal.SIGQUIT, gevent.shutdown)
+    except KeyboardInterrupt:
+        print "Stopping publisher"
+
+
+def init_collector_project():
+    publisher = DucksboardPublisher()
+    publisher.init_collector_project()
