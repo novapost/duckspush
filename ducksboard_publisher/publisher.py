@@ -173,6 +173,6 @@ def init_publisher_settings():
         utils.generate_template("publisher_settings.yaml")
 
 
-def init_collector_project():
+def init_collect_project():
     publisher = DucksboardPublisher()
     publisher.init_collector_project()
