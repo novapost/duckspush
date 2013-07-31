@@ -1,0 +1,6 @@
+*.pyc
+*~
+*.egg-info
+publisher_settings.yaml
+dist/
+collect_project/

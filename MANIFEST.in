@@ -1,0 +1,3 @@
+recursive-include ducksboard_publisher *
+global-exclude *.pyc
+include AUTHORS CHANGELOG LICENSE README.md VERSION
