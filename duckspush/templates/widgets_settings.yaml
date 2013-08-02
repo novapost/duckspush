@@ -1,4 +1,4 @@
-{% for widget in widget_data %}
+{% for widget in widgets %}
 - !Widget
   id: {{widget.widget.id}}
   kind: "{{widget.widget.kind}}"

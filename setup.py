@@ -14,20 +14,20 @@ def read_relative_file(filename):
 NAME = 'django-js-error-hook'
 README = read_relative_file('README.md')
 VERSION = read_relative_file('VERSION').strip()
-PACKAGES = ['ducksboard_publisher']
+PACKAGES = ['duckspush']
 REQUIRES = ['gevent', 'pyaml', 'jinja2', 'respire']
 
 
 setup(name=NAME,
       version=VERSION,
-      description='A publisher for ducksboard widgets.',
+      description='A pusher for ducksboard widgets.',
       long_description=README,
       classifiers=['Development Status :: 1 - Planning',
                    'License :: OSI Approved :: BSD License',
                    'Programming Language :: Python :: 2.7',
                    'Programming Language :: Python :: 2.6',
                    ],
-      keywords='ducksboard, ducksboard-publisher',
+      keywords='ducksboard, ducksboard-pusher',
       author='Jonathan Dorival',
       author_email='jonathan.dorival@novapost.fr',
       url='https://github.com/jojax/%s' % NAME,
@@ -38,9 +38,9 @@ setup(name=NAME,
       install_requires=REQUIRES,
       entry_points={
         'console_scripts': [
-            'init_publisher_settings = ducksboard_publisher.publisher:init_publisher_settings',
-            'init_collect_project = ducksboard_publisher.publisher:init_collect_project',
-            'run_publisher = ducksboard_publisher.publisher:run_publisher',
+            'start_project = duckspush.pusher:start_duckspush_project',
+            'delete_project = ducksboard_publisher.publisher:delete_duckspush_project',
+            'run_publisher = ducksboard_publisher.publisher:run_pusher',
             ]
         },
       )

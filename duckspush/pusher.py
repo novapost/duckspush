@@ -10,11 +10,13 @@ import time
 import utils
 import shutil
 import signal
+import sys
 import yaml
 
-from ducksboard_publisher import PROJECT_ROOT
-#from jinja2 import Environment, PackageLoader
+from duckspush import PROJECT_ROOT
 from os import path
+from optparse import OptionParser
+from requests import HTTPError
 
 
 ## TODO break into multiple funcs
@@ -66,60 +68,20 @@ class DataCollector(yaml.YAMLObject):
         return str(self.__dict__)
 
 
-class DucksboardPublisher(object):
+class DucksboardPusher(object):
 
-    def __init__(self):
-        self.push_api_cli = api.get_api_cli(
-            api_key=self.settings.get("DUCKSBOARD_API_TOKEN"),
-            api_name="push")
-
-    def init_collector_project(self):
-        project_path = path.join(PROJECT_ROOT, "collect_project")
-        utils.mkdir_p(project_path)
-        try:
-            init_file_path = path.join(project_path, "__init__.py")
-            open(init_file_path, 'a').close()
-
-            utils.generate_template("collectors.py")
-
-            api_key = self.settings.get("DUCKSBOARD_API_TOKEN")
-            dashboard_api_cli = api.get_api_cli(api_key, "dashboard")
-            # handle exception in case of wrong api token publisher settings
-            widget_data = dashboard_api_cli.read_widgets()["data"]
-            custom_widgets = []
-
-            for w in widget_data:
-                kind = w["widget"]["kind"]
-                if kind.startswith("custom"):
-                    custom_widgets.append(w)
-            utils.generate_template("widget_settings.yaml",
-                                    widget_data=custom_widgets)
-        except Exception, e:
-        # replace by specific handled exception
-            shutil.rmtree(project_path)
-            raise e
-
-    @property
-    def settings(self):
-        settings_path = path.join(PROJECT_ROOT, "publisher_settings.yaml")
-        try:
-            with open(settings_path, "r") as config_file:
-                settings = yaml.load(config_file.read())
-        except IOError:
-            raise exc.PublisherSettingsDoesNotExist
-        else:
-            return settings
+    def __init__(self, settings):
+        self.settings = settings
 
     @property
     def widgets(self):
-        config_path = path.join(PROJECT_ROOT,
-                                "collect_project",
-                                "widget_settings.yaml")
+        widget_settings_path = path.join(self.settings.get("path"),
+                                         "widgets_settings.yaml")
         try:
-            with open(config_path, "r") as config_file:
-                widgets = yaml.load(config_file.read())
+            with open(widget_settings_path, "r") as f:
+                widgets = yaml.load(f.read())
         except IOError:
-            raise exc.CollectorProjectDoesNotExist
+            raise exc.WidgetSettingsDoesNotExist
         else:
             from collect_project import collectors
             for widget in widgets:
@@ -141,7 +103,7 @@ class DucksboardPublisher(object):
         except Exception, e:
             print e.message
 
-    def run(self):
+    def run(self, refresh_interval, collectors_timeout):
         while True:
             widget_threads = dict()
             endpoints_data = dict()
@@ -154,25 +116,178 @@ class DucksboardPublisher(object):
                                       eid=str(eid),
                                       data=data)
                 widget_threads["thread for endpoint %s" % eid] = thread
-            time.sleep(self.settings.get("PUBLISHER_REFRESH_INTERVAL"))
+            time.sleep(refresh_interval)
             gevent.joinall(widget_threads.values())
 
 
-def run_publisher():
-    publisher = DucksboardPublisher()
+def start_duckspush_project():
+    parser = OptionParser(usage="usage: %prog [options] <project_name> <api_key>",
+                          version="%prog 1.0")
+    parser.add_option("-d", "--dashboard",
+                      action="store",
+                      dest="dashboard",
+                      help="limit widgets collected to this dashboard",)
+    parser.add_option("-l", "--limit",
+                      action="store",
+                      dest="limit",
+                      help="Limit number of collected widgets",)
+
+    (options, args) = parser.parse_args()
+
+    if len(args) != 2:
+        parser.error("wrong number of arguments")
+        print parser.usage
+
+    duckspush_settings_path = path.join(PROJECT_ROOT,
+                                        "duckspush_settings.yaml")
+    project_name = args[0]
     try:
-        publisher.run()
+        with open(duckspush_settings_path) as f:
+            settings_data = f.read()
+        proj = yaml.load(settings_data)["projects"].get(project_name)
+    except IOError:
+        pass
+    else:
+        if proj:
+            raise exc.PushProjectAlreadyExist(project_name)
+
+    api_key = args[1]
+    dashboard_api_cli = api.get_api_cli(api_key, "dashboard")
+    try:
+        widgets_data = dashboard_api_cli.read_widgets()["data"]
+    except HTTPError, e:
+        if e.response.status_code == 401:
+            raise exc.APITokenError
+
+    filtered_widgets = []
+    for w in widgets_data:
+        widget = w["widget"]
+        if widget["kind"].startswith("custom"):
+            filtered_widgets.append(w)
+
+    dashboard = options.dashboard
+    if dashboard:
+        try:
+            dashboard_api_cli.read_dasboard(slug=dashboard)
+        except HTTPError, e:
+            if e.response.status_code == 401:
+                raise exc.DashboardDoesNotExist(dashboard)
+
+        dashboard_widgets = []
+        for w in filtered_widgets:
+            widget = w["widget"]
+            if dashboard and widget["dashboard"] == dashboard:
+                dashboard_widgets.append(w)
+        filtered_widgets = dashboard_widgets
+
+    limit = options.limit
+    if limit:
+        filtered_widgets = filtered_widgets[:limit]
+
+    project_path = path.join(os.getcwd(), project_name)
+    if os.path.exists(duckspush_settings_path):
+        with open(duckspush_settings_path) as settings:
+            settings_data = settings.read()
+        settings_obj = yaml.load(settings_data)
+        new_projects = settings_obj.get("projects")
+        new_projects.update({project_name: {"path": project_path,
+                                            "api_key": api_key}})
+        settings_obj.update({"projects": new_projects})
+    else:
+        project_info = dict()
+        project_info[project_name] = dict(path=project_path,
+                                          api_key=api_key)
+
+        settings_obj = dict(projects=project_info)
+
+    with open(duckspush_settings_path, "w") as settings:
+        settings_obj_str = yaml.dump(settings_obj)
+        settings.write(settings_obj_str)
+
+    utils.mkdir_p(project_path)
+    open(path.join(project_path, "__init__.py"), "a").close()
+    utils.generate_template("collectors.py", project_path)
+    utils.generate_template("widgets_settings.yaml",
+                            project_path,
+                            widgets=filtered_widgets)
+
+
+def delete_duckspush_project():
+    parser = OptionParser(usage="usage: %prog <project_name>",
+                          version="%prog 1.0")
+
+    (options, args) = parser.parse_args()
+    if len(args) != 1:
+        parser.error("wrong number of arguments")
+        print parser.usage
+
+    duckspush_settings_path = path.join(PROJECT_ROOT,
+                                        "duckspush_settings.yaml")
+        
+    try:
+        with open(duckspush_settings_path) as f:
+            settings_data = f.read()
+        projects_settings = yaml.load(settings_data)
+        project_name = args[0]
+    except IOError:
+        raise exc.PusherSettingsDoesNotExist
+    
+    try:
+        project_path = projects_settings["projects"][project_name]["path"]
+    except KeyError:
+        raise exc.PushProjectDoesNotExist(project_name)
+    
+    del projects_settings["projects"][project_name]
+    with open(duckspush_settings_path, "w") as f:
+        write_data = yaml.dump(projects_settings)
+        f.write(write_data)
+
+    shutil.rmtree(project_path)
+
+def run_pusher():
+    parser = OptionParser(usage="usage: %prog [options] <project_name>",
+                          version="%prog 1.0")
+    parser.add_option("-pi", "--push-interval",
+                      action="store",
+                      dest="push_interval",
+                      type="int",
+                      default=30,
+                      help="Push data interval => sec")
+    parser.add_option("-ct", "--collectors_timeout",
+                      action="store",
+                      dest="timeout",
+                      type="int",
+                      default=20,
+                      help="Timeout for data collection",)
+
+    (options, args) = parser.parse_args()
+
+    if len(args) != 1:
+        parser.error("wrong number of arguments")
+        print parser.usage
+
+    duckspush_settings_path = path.join(PROJECT_ROOT,
+                                        "duckspush_settings.yaml")
+    project_name = args[0]
+    try:
+        with open(duckspush_settings_path) as f:
+            settings_data = f.read()
+        proj_settings = yaml.load(settings_data)["projects"][project_name]
+    except IOError:
+        raise exc.PusherSettingsDoesNotExist
+    except KeyError:
+        raise exc.PushProjectDoesNotExist(project_name)
+
+    sys.path.append(proj_settings.get("path"))
+    pusher = DucksboardPusher(proj_settings)
+    try:
+        pusher.run(push_interval=options.push_interval,
+                   collectors_timout=options.timeout)
         gevent.signal(signal.SIGQUIT, gevent.shutdown)
     except KeyboardInterrupt:
         print "Stopping publisher"
 
 
-def init_publisher_settings():
-    pub_settings_path = path.join(PROJECT_ROOT, "publisher_settings.yaml")
-    if not os.path.exists(pub_settings_path):
-        utils.generate_template("publisher_settings.yaml")
-
-
-def init_collect_project():
-    publisher = DucksboardPublisher()
-    publisher.init_collector_project()
+if __name__ == "__main__":
+    #start_duckspush_project()
+    delete_duckspush_project()

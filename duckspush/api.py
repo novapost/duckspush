@@ -2,7 +2,7 @@ import exc
 import json
 import requests
 
-from ducksboard_publisher import PROJECT_ROOT
+from duckspush import PROJECT_ROOT
 from os import path
 from respire.client import Client
 

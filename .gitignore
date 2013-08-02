@@ -1,6 +1,6 @@
 *.pyc
 *~
 *.egg-info
-publisher_settings.yaml
+duckspush_settings.yaml
+widgets_settings.yaml
 dist/
-collect_project/
