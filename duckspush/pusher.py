@@ -60,7 +60,7 @@ class DataCollector(yaml.YAMLObject):
         self.func_kwargs = kwargs
 
     def collect(self):
-        from collect_project import collectors
+        import collectors
         collect_func = getattr(collectors, self.collector_func_name)
         return collect_func(**self.func_kwargs)
 
@@ -83,7 +83,7 @@ class DucksboardPusher(object):
         except IOError:
             raise exc.WidgetSettingsDoesNotExist
         else:
-            from collect_project import collectors
+            import collectors
             for widget in widgets:
                 for endpoint in widget.endpoints:
                     try:
@@ -103,7 +103,7 @@ class DucksboardPusher(object):
         except Exception, e:
             print e.message
 
-    def run(self, refresh_interval, collectors_timeout):
+    def run(self, push_interval, collectors_timeout):
         while True:
             widget_threads = dict()
             endpoints_data = dict()
@@ -116,7 +116,7 @@ class DucksboardPusher(object):
                                       eid=str(eid),
                                       data=data)
                 widget_threads["thread for endpoint %s" % eid] = thread
-            time.sleep(refresh_interval)
+            time.sleep(push_interval)
             gevent.joinall(widget_threads.values())
 
 
@@ -129,6 +129,7 @@ def start_duckspush_project():
                       help="limit widgets collected to this dashboard",)
     parser.add_option("-l", "--limit",
                       action="store",
+                      type="int",
                       dest="limit",
                       help="Limit number of collected widgets",)
 
@@ -168,9 +169,9 @@ def start_duckspush_project():
     dashboard = options.dashboard
     if dashboard:
         try:
-            dashboard_api_cli.read_dasboard(slug=dashboard)
+            dashboard_api_cli.read_dashboard(slug=dashboard)
         except HTTPError, e:
-            if e.response.status_code == 401:
+            if e.response.status_code == 404:
                 raise exc.DashboardDoesNotExist(dashboard)
 
         dashboard_widgets = []
@@ -247,13 +248,13 @@ def delete_duckspush_project():
 def run_pusher():
     parser = OptionParser(usage="usage: %prog [options] <project_name>",
                           version="%prog 1.0")
-    parser.add_option("-pi", "--push-interval",
+    parser.add_option("-p", "--push-interval",
                       action="store",
                       dest="push_interval",
                       type="int",
                       default=30,
                       help="Push data interval => sec")
-    parser.add_option("-ct", "--collectors_timeout",
+    parser.add_option("-c", "--collectors_timeout",
                       action="store",
                       dest="timeout",
                       type="int",
@@ -280,14 +281,11 @@ def run_pusher():
 
     sys.path.append(proj_settings.get("path"))
     pusher = DucksboardPusher(proj_settings)
+    pusher.push_api_cli = api.get_api_cli(proj_settings.get("api_key"),
+                                          "push")
     try:
         pusher.run(push_interval=options.push_interval,
-                   collectors_timout=options.timeout)
+                   collectors_timeout=options.timeout)
         gevent.signal(signal.SIGQUIT, gevent.shutdown)
     except KeyboardInterrupt:
         print "Stopping pusher"
-
-
-if __name__ == "__main__":
-    #start_duckspush_project()
-    delete_duckspush_project()

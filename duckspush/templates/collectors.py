@@ -1,4 +1,5 @@
-## Collector example function
+#import random
 
+## Collector example function
 # def collector_test():
-#     return dict(value=10)
+#     return dict(value=random.randint(1,1000))
