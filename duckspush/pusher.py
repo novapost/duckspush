@@ -285,7 +285,7 @@ def run_pusher():
                    collectors_timout=options.timeout)
         gevent.signal(signal.SIGQUIT, gevent.shutdown)
     except KeyboardInterrupt:
-        print "Stopping publisher"
+        print "Stopping pusher"
 
 
 if __name__ == "__main__":

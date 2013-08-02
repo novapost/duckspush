@@ -39,8 +39,8 @@ setup(name=NAME,
       entry_points={
         'console_scripts': [
             'start_project = duckspush.pusher:start_duckspush_project',
-            'delete_project = ducksboard_publisher.publisher:delete_duckspush_project',
-            'run_publisher = ducksboard_publisher.publisher:run_pusher',
+            'delete_project = duckspush.pusher:delete_duckspush_project',
+            'run_pusher = duckspush.pusher:run_pusher',
             ]
         },
       )

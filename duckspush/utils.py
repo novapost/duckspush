@@ -32,9 +32,9 @@ def generate_template(template_name, dest, **args):
     else:
         raise TemplateNotFound
 
-    with open(output_file_path, "w") as publisher_settings:
+    with open(output_file_path, "w") as pusher_settings:
             env = Environment(loader=PackageLoader("duckspush",
                                                    "templates"))
             template = env.get_template(template_name)
             template_string = template.render(**args)
-            publisher_settings.write(template_string.encode("utf-8"))
+            pusher_settings.write(template_string.encode("utf-8"))
