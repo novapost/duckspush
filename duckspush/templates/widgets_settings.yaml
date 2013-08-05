@@ -3,13 +3,13 @@
   id: {{widget.widget.id}}
   kind: "{{widget.widget.kind}}"
   title: "{{widget.widget.title}}"
-  endpoints:
-  {% for endpoint_id, endpoint_data in widget.slots.iteritems() %}
-  - !WidgetEndpoint 
-    subtitle: "{{endpoint_data.subtitle}}"
-    collector: !DataCollector
-      collector_func_name: Specify a collector function
+  dashboard: "{{widget.widget.dashboard}}"
+  slots:{% for slot_data in widget.slots.values() %}
+  - !Slot 
+    subtitle: "{{slot_data.subtitle}}"
+    label: "{{slot_data.label}}"
+    datasource_func: !DataSourceFunc
+      func_name: "Specify datasource func"
       func_kwargs: {}
-    endpoint_id: {{endpoint_data.label}}
   {% endfor %}
 {% endfor %}

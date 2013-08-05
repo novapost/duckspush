@@ -1,71 +1,94 @@
-# -*- coding: iso-8859-1 -*-
-
 import gevent.monkey
 gevent.monkey.patch_all()
 import gevent
 import api
-import exc
+import logging
 import os
-import time
-import utils
-import shutil
 import signal
 import sys
+import time
+import utils
 import yaml
 
-from duckspush import PROJECT_ROOT
+from duckspush import PACKAGE_ROOT
 from os import path
 from optparse import OptionParser
 from requests import HTTPError
+from shutil import rmtree
+# logging.basicConfig(format='%(asctime)s %(levelname)s:%(message)s',
+#                     level=logging.INFO)
+
+formatter = logging.Formatter('%(asctime)s %(levelname)s:%(message)s')
+handler = logging.StreamHandler()
+handler.setFormatter(formatter)
+widget_logger = logging.getLogger("Widget")
+pusher_logger = logging.getLogger("Pusher")
+widget_logger.setLevel(logging.INFO)
+widget_logger.addHandler(handler)
+pusher_logger.setLevel(logging.INFO)
+pusher_logger.addHandler(handler)
 
 
-## TODO break into multiple funcs
 class Widget(yaml.YAMLObject):
     yaml_tag = u'!Widget'
 
-    def __init__(self, wid, title, kind, endpoints):
+    def __init__(self, wid, kind, title, dashboard, slots):
         self.wid = wid
-        self.title = title
         self.kind = kind
-        self.endpoints = endpoints
+        self.title = title
+        self.dashboard = dashboard
+        self.slots = slots
 
-    def collect_endpoints_data(self):
-        data = dict()
-        for e in self.endpoints:
-            data[e.endpoint_id] = e.collector.collect()
-        return data
+    def collect_slots_data(self, timeout):
+        slot_threads = [(slot.label, gevent.spawn(slot.collect_data))
+                        for slot in self.slots]
+        collected_data = {}
+        for slot_label, st in slot_threads:
+            try:
+                collected_data[slot_label] = st.get(timeout=timeout)
+            except Exception, e:
+                if isinstance(e, AttributeError):
+                    widget_logger.error("Widget<id=%s, title=%s, dashboard=%s> has no, or an incorrect datasource_func"
+                                        % (self.id,
+                                           self.title,
+                                           self.dashboard,
+                                           self.dashboard))
+                collected_data[slot_label] = e
+            except gevent.Timeout, t:
+                collected_data[slot_label] = t
+        # threads = [s[1] for s in slot_threads]
+        # for t in threads:
+        #     t.join(timeout=timeout)
+        #gevent.joinall([s[1] for s in slot_threads], timeout=timeout)
+        return collected_data
 
-    def __str__(self):
-        return str(self.__dict__)
 
+class Slot(yaml.YAMLObject):
+    yaml_tag = u'!Slot'
 
-class WidgetEndpoint(yaml.YAMLObject):
-
-    yaml_tag = u'!WidgetEndpoint'
-
-    def __init__(self, eid, subtitle, collector):
-        self.endpoint_id = eid
+    def __init__(self, subtitle, label, datasource_func):
         self.subtitle = subtitle
-        self.collector = collector
+        self.label = label
+        self.datasource_func = datasource_func
 
-    def __str__(self):
-        return str(self.__dict__)
+    def collect_data(self):
+        try:
+            return self.datasource_func()
+        except Exception, e:
+            return e
 
 
-class DataCollector(yaml.YAMLObject):
-    yaml_tag = u'!DataCollector'
+class DataSourceFunc(yaml.YAMLObject):
+    yaml_tag = u'!DataSourceFunc'
 
-    def __init__(self, collector_func_name, **kwargs):
-        self.collector_func_name = collector_func_name
-        self.func_kwargs = kwargs
+    def __init__(self, func_name, func_kwargs):
+        self.func_name = func_name
+        self.func_kwargs = func_kwargs
 
-    def collect(self):
-        import collectors
-        collect_func = getattr(collectors, self.collector_func_name)
-        return collect_func(**self.func_kwargs)
-
-    def __str__(self):
-        return str(self.__dict__)
+    def __call__(self):
+        import datasources
+        func = getattr(datasources, self.func_name)
+        return func(**self.func_kwargs)
 
 
 class DucksboardPusher(object):
@@ -77,52 +100,56 @@ class DucksboardPusher(object):
     def widgets(self):
         widget_settings_path = path.join(self.settings.get("path"),
                                          "widgets_settings.yaml")
-        try:
-            with open(widget_settings_path, "r") as f:
-                widgets = yaml.load(f.read())
-        except IOError:
-            raise exc.WidgetSettingsDoesNotExist
-        else:
-            import collectors
-            for widget in widgets:
-                for endpoint in widget.endpoints:
-                    try:
-                        func_name = endpoint.collector.collector_func_name
-                        getattr(collectors, func_name)
-                    except AttributeError:
-                        raise exc.CollectorDoesNotExist(func_name, widget)
-            return widgets
+        with open(widget_settings_path, "r") as f:
+            widgets = yaml.load(f.read())
+        return widgets
 
-    def push_value(self, eid, data):
-        # We dont want to see the traceback on screen
-        # so specif exception handling here
-        #replace print by log message
-        try:
-            self.push_api_cli.push_value(id=str(eid),
-                                         data=data)
-        except Exception, e:
-            print e.message
+    def collect_widgets_data(self, timeout):
+        widget_threads = [(w, gevent.spawn(w.collect_slots_data, timeout))
+                          for w in self.widgets]
+        all_data = dict()
+        for widget, wt in widget_threads:
+            data = wt.get()
+            print data.values()[0]
+            if isinstance(data.values()[0], (Exception, gevent.Timeout)):
+                print "xxxxxxxxxxxxxxxxxxx"
+                print data
+                print "xxxxxxxxxxxxxxxxxxx"
+                pusher_logger.error("Widget<id=%s, title=%s, dashboard=%s>, failed to collect data. Error ==> %s" 
+                                    % (widget.id,
+                                       widget.title,
+                                       widget.dashboard,
+                                       data))
+            else:
+                pusher_logger.info("Widget<id=%s, title=%s, dashboard=%s>, collected data  ==> %s" 
+                                   % (widget.id,
+                                      widget.title,
+                                      widget.dashboard,
+                                      data))
+
+                all_data.update(data)
+        return all_data
+
+    def push_to_ducksboard(self, collected_data):
+        push_threads = [gevent.spawn(self.push_api_cli.push_value,
+                                     id=slot_label,
+                                     data=data)
+                        for slot_label, data in collected_data.iteritems()
+                        if not isinstance(data, Exception)]
+        gevent.joinall(push_threads)
+        pusher_logger.info("All collected_data pushed to ducksboard")
 
     def run(self, push_interval, collectors_timeout):
         while True:
-            widget_threads = dict()
-            endpoints_data = dict()
-            for widget in self.widgets:
-                widget_data = widget.collect_endpoints_data()
-                endpoints_data.update(widget_data)
-
-            for eid, data in endpoints_data.iteritems():
-                thread = gevent.spawn(self.push_value,
-                                      eid=str(eid),
-                                      data=data)
-                widget_threads["thread for endpoint %s" % eid] = thread
+            collected_data = self.collect_widgets_data(collectors_timeout)
+            self.push_to_ducksboard(collected_data)
             time.sleep(push_interval)
-            gevent.joinall(widget_threads.values())
 
 
-def start_duckspush_project():
-    parser = OptionParser(usage="usage: %prog [options] <project_name> <api_key>",
-                          version="%prog 1.0")
+def start_push_project():
+    parser = OptionParser(
+        usage="usage: %prog [options] <project_name> <api_key>",
+        version="%prog 1.0")
     parser.add_option("-d", "--dashboard",
                       action="store",
                       dest="dashboard",
@@ -139,7 +166,7 @@ def start_duckspush_project():
         parser.error("wrong number of arguments")
         print parser.usage
 
-    duckspush_settings_path = path.join(PROJECT_ROOT,
+    duckspush_settings_path = path.join(PACKAGE_ROOT,
                                         "duckspush_settings.yaml")
     project_name = args[0]
     try:
@@ -150,37 +177,33 @@ def start_duckspush_project():
         pass
     else:
         if proj:
-            raise exc.PushProjectAlreadyExist(project_name)
+            sys.exit("A project already exist under this name.Please choose an other one")
 
     api_key = args[1]
     dashboard_api_cli = api.get_api_cli(api_key, "dashboard")
+    # Trying to get custom widgets for this api key
     try:
         widgets_data = dashboard_api_cli.read_widgets()["data"]
     except HTTPError, e:
         if e.response.status_code == 401:
-            raise exc.APITokenError
-
-    filtered_widgets = []
-    for w in widgets_data:
-        widget = w["widget"]
-        if widget["kind"].startswith("custom"):
-            filtered_widgets.append(w)
+            sys.exit("It seems that the key %s is incorrect.Please set a correct api" % api_key)
+    else:
+        filtered_widgets = [w for w in widgets_data
+                            if w["widget"]["kind"].startswith("custom")]
 
     dashboard = options.dashboard
+    # Check dashboard existence
     if dashboard:
         try:
             dashboard_api_cli.read_dashboard(slug=dashboard)
         except HTTPError, e:
             if e.response.status_code == 404:
-                raise exc.DashboardDoesNotExist(dashboard)
+                sys.exit("Sorry can't find any dashboad under the name of: %s" % dashboard)
+        # Then filtered already grabbed widgets
+        filtered_widgets = [w for w in filtered_widgets
+                            if w["widget"]["dashboard"] == dashboard]
 
-        dashboard_widgets = []
-        for w in filtered_widgets:
-            widget = w["widget"]
-            if dashboard and widget["dashboard"] == dashboard:
-                dashboard_widgets.append(w)
-        filtered_widgets = dashboard_widgets
-
+    # If limit is set return a slice of widgets
     limit = options.limit
     if limit:
         filtered_widgets = filtered_widgets[:limit]
@@ -190,30 +213,26 @@ def start_duckspush_project():
         with open(duckspush_settings_path) as settings:
             settings_data = settings.read()
         settings_obj = yaml.load(settings_data)
-        new_projects = settings_obj.get("projects")
-        new_projects.update({project_name: {"path": project_path,
-                                            "api_key": api_key}})
-        settings_obj.update({"projects": new_projects})
     else:
-        project_info = dict()
-        project_info[project_name] = dict(path=project_path,
-                                          api_key=api_key)
+        settings_obj = dict(projects={})
 
-        settings_obj = dict(projects=project_info)
-
+    settings_obj["projects"][project_name] = dict(path=project_path,
+                                                  api_key=api_key)
+    # Write setings back to duckspush conf
     with open(duckspush_settings_path, "w") as settings:
         settings_obj_str = yaml.dump(settings_obj)
         settings.write(settings_obj_str)
 
+    # Build project environnement
     utils.mkdir_p(project_path)
     open(path.join(project_path, "__init__.py"), "a").close()
-    utils.generate_template("collectors.py", project_path)
+    utils.generate_template("datasources.py", project_path)
     utils.generate_template("widgets_settings.yaml",
                             project_path,
                             widgets=filtered_widgets)
 
 
-def delete_duckspush_project():
+def remove_push_project():
     parser = OptionParser(usage="usage: %prog <project_name>",
                           version="%prog 1.0")
 
@@ -222,28 +241,24 @@ def delete_duckspush_project():
         parser.error("wrong number of arguments")
         print parser.usage
 
-    duckspush_settings_path = path.join(PROJECT_ROOT,
+    duckspush_settings_path = path.join(PACKAGE_ROOT,
                                         "duckspush_settings.yaml")
-        
-    try:
-        with open(duckspush_settings_path) as f:
-            settings_data = f.read()
-        projects_settings = yaml.load(settings_data)
-        project_name = args[0]
-    except IOError:
-        raise exc.PusherSettingsDoesNotExist
-    
+
+    with open(duckspush_settings_path) as f:
+        settings_data = f.read()
+
+    projects_settings = yaml.load(settings_data)
+    project_name = args[0]
     try:
         project_path = projects_settings["projects"][project_name]["path"]
     except KeyError:
-        raise exc.PushProjectDoesNotExist(project_name)
-    
+        sys.exit("Project %s does not exists" % project_name)
     del projects_settings["projects"][project_name]
     with open(duckspush_settings_path, "w") as f:
         write_data = yaml.dump(projects_settings)
         f.write(write_data)
+    rmtree(project_path)
 
-    shutil.rmtree(project_path)
 
 def run_pusher():
     parser = OptionParser(usage="usage: %prog [options] <project_name>",
@@ -258,7 +273,7 @@ def run_pusher():
                       action="store",
                       dest="timeout",
                       type="int",
-                      default=20,
+                      default=10,
                       help="Timeout for data collection",)
 
     (options, args) = parser.parse_args()
@@ -267,17 +282,15 @@ def run_pusher():
         parser.error("wrong number of arguments")
         print parser.usage
 
-    duckspush_settings_path = path.join(PROJECT_ROOT,
+    duckspush_settings_path = path.join(PACKAGE_ROOT,
                                         "duckspush_settings.yaml")
     project_name = args[0]
+    with open(duckspush_settings_path) as f:
+        settings_data = f.read()
     try:
-        with open(duckspush_settings_path) as f:
-            settings_data = f.read()
         proj_settings = yaml.load(settings_data)["projects"][project_name]
-    except IOError:
-        raise exc.PusherSettingsDoesNotExist
     except KeyError:
-        raise exc.PushProjectDoesNotExist(project_name)
+        sys.exit("Project %s does not exists" % project_name)
 
     sys.path.append(proj_settings.get("path"))
     pusher = DucksboardPusher(proj_settings)
@@ -288,4 +301,8 @@ def run_pusher():
                    collectors_timeout=options.timeout)
         gevent.signal(signal.SIGQUIT, gevent.shutdown)
     except KeyboardInterrupt:
-        print "Stopping pusher"
+        pusher_logger.info("Stopping pusher")
+
+if __name__ == "__main__":
+    start_push_project()
+    

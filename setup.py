@@ -11,7 +11,7 @@ def read_relative_file(filename):
         return f.read()
 
 
-NAME = 'django-js-error-hook'
+NAME = 'duckspush'
 README = read_relative_file('README.md')
 VERSION = read_relative_file('VERSION').strip()
 PACKAGES = ['duckspush']
@@ -38,8 +38,8 @@ setup(name=NAME,
       install_requires=REQUIRES,
       entry_points={
         'console_scripts': [
-            'start_project = duckspush.pusher:start_duckspush_project',
-            'delete_project = duckspush.pusher:delete_duckspush_project',
+            'start_push_project = duckspush.pusher:start_push_project',
+            'remove_push_project = duckspush.pusher:remove_push_project',
             'run_pusher = duckspush.pusher:run_pusher',
             ]
         },
