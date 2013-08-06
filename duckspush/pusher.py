@@ -16,8 +16,6 @@ from optparse import OptionParser
 from pprint import pformat
 from requests import HTTPError
 from shutil import rmtree
-# logging.basicConfig(format='%(asctime)s %(levelname)s:%(message)s',
-#                     level=logging.INFO)
 
 formatter = logging.Formatter('[%(name)s|%(asctime)s|%(levelname)s]:%(message)s')
 handler = logging.StreamHandler()
@@ -32,6 +30,22 @@ pusher_logger.setLevel(logging.INFO)
 pusher_logger.addHandler(handler)
 datasource_logger.setLevel(logging.INFO)
 datasource_logger.addHandler(handler)
+
+collect_report_log_msg = """
+
+ Widget Collect Report
+ #####################
+
+ Widget detail:
+ --------------
+ id: %(id)s
+ title: %(title)s
+ dashboard: %(dashboard)s
+
+ Collected data mapping ({push_endpoint_id:data,})
+ -------------------------------------------------
+ %(data)s
+"""
 
 
 class Widget(yaml.YAMLObject):
@@ -49,7 +63,10 @@ class Widget(yaml.YAMLObject):
                         for slot in self.slots]
         collected_data = {}
         for slot_label, st in slot_threads:
-            collected_data[slot_label] = st.get()
+            try:
+                collected_data[slot_label] = st.get(timeout=timeout)
+            except gevent.Timeout, t:
+                collected_data[slot_label] = t
         return collected_data
 
 
@@ -103,41 +120,39 @@ class DucksboardPusher(object):
         all_data = dict()
         for widget, wt in widget_threads:
             data = wt.get()
+            msg = collect_report_log_msg % dict(id=widget.id,
+                                                title=widget.title,
+                                                dashboard=widget.dashboard,
+                                                data=pformat(data))
             if isinstance(data.values()[0], (Exception, gevent.Timeout)):
-                message = """  #########################
-                          \t\t # Widget Collect Report #
-                          \t\t #########################
-                          \t\t Widget info
-                          \t\t ------------
-                          \t\t id:%(id)s
-                          \t\t title:%(title)s
-                          \t\t dashboard:%(dashboard)s
-                          \t\t Collected data:
-                          \t\t ---------------
-                          %(data)s""" % \
-                    dict(id=widget.id,
-                         title=widget.title,
-                         dashboard=widget.dashboard,
-                         data=pformat(data, indent=12))
-                pusher_logger.error("%s" % message)
+                pusher_logger.error("%s" % msg)
             else:
-                # pusher_logger.info("Widget<id=%s, title=%s, dashboard=%s>, collected data  ==> %s" 
-                #                    % (widget.id,
-                #                       widget.title,
-                #                       widget.dashboard,
-                #                       data))
-
+                pusher_logger.info("%s" % msg)
                 all_data.update(data)
         return all_data
 
+    def push(self, sid, data):
+        try:
+            resp = self.push_api_cli.push_value(id=sid, data=data)
+        except HTTPError, e:
+            resp = e
+        return resp
+
     def push_to_ducksboard(self, collected_data):
-        push_threads = [gevent.spawn(self.push_api_cli.push_value,
-                                     id=slot_label,
-                                     data=data)
+        if not collected_data:
+            pusher_logger.info("Nothing collected, nothing to push")
+            return
+
+        push_threads = [(slot_label, gevent.spawn(self.push,
+                                                  sid=slot_label,
+                                                  data=data))
                         for slot_label, data in collected_data.iteritems()
                         if not isinstance(data, Exception)]
-        gevent.joinall(push_threads)
-        #pusher_logger.info("All collected_data pushed to ducksboard")
+
+        for sl, pt in push_threads:
+            resp = pt.get()
+            pusher_logger.info("Push to endpoint_id => %s, response %s:"
+                               % (sl, resp))
 
     def run(self, push_interval, collectors_timeout):
         while True:
@@ -186,7 +201,8 @@ def start_push_project():
         widgets_data = dashboard_api_cli.read_widgets()["data"]
     except HTTPError, e:
         if e.response.status_code == 401:
-            sys.exit("It seems that the key %s is incorrect.Please set a correct api" % api_key)
+            sys.exit("Your api key %s is incorrect.Please set a correct one"
+                     % api_key)
     else:
         filtered_widgets = [w for w in widgets_data
                             if w["widget"]["kind"].startswith("custom")]
@@ -198,7 +214,8 @@ def start_push_project():
             dashboard_api_cli.read_dashboard(slug=dashboard)
         except HTTPError, e:
             if e.response.status_code == 404:
-                sys.exit("Sorry can't find any dashboad under the name of: %s" % dashboard)
+                sys.exit("Sorry can't find any dashboad under the name of: %s"
+                         % dashboard)
         # Then filtered already grabbed widgets
         filtered_widgets = [w for w in filtered_widgets
                             if w["widget"]["dashboard"] == dashboard]
@@ -305,4 +322,3 @@ def run_pusher():
 
 if __name__ == "__main__":
     start_push_project()
-    
