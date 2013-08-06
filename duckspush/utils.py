@@ -25,7 +25,7 @@ def mkdir_p(p):
 
 
 def generate_template(template_name, dest, **args):
-    if template_name == "collectors.py":
+    if template_name == "datasources.py":
         output_file_path = path.join(dest, template_name)
     elif template_name == "widgets_settings.yaml":
         output_file_path = path.join(dest, template_name)

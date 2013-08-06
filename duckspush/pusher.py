@@ -13,20 +13,25 @@ import yaml
 from duckspush import PACKAGE_ROOT
 from os import path
 from optparse import OptionParser
+from pprint import pformat
 from requests import HTTPError
 from shutil import rmtree
 # logging.basicConfig(format='%(asctime)s %(levelname)s:%(message)s',
 #                     level=logging.INFO)
 
-formatter = logging.Formatter('%(asctime)s %(levelname)s:%(message)s')
+formatter = logging.Formatter('[%(name)s|%(asctime)s|%(levelname)s]:%(message)s')
 handler = logging.StreamHandler()
 handler.setFormatter(formatter)
 widget_logger = logging.getLogger("Widget")
 pusher_logger = logging.getLogger("Pusher")
+datasource_logger = logging.getLogger("DatasourceFunc")
+
 widget_logger.setLevel(logging.INFO)
 widget_logger.addHandler(handler)
 pusher_logger.setLevel(logging.INFO)
 pusher_logger.addHandler(handler)
+datasource_logger.setLevel(logging.INFO)
+datasource_logger.addHandler(handler)
 
 
 class Widget(yaml.YAMLObject):
@@ -44,22 +49,7 @@ class Widget(yaml.YAMLObject):
                         for slot in self.slots]
         collected_data = {}
         for slot_label, st in slot_threads:
-            try:
-                collected_data[slot_label] = st.get(timeout=timeout)
-            except Exception, e:
-                if isinstance(e, AttributeError):
-                    widget_logger.error("Widget<id=%s, title=%s, dashboard=%s> has no, or an incorrect datasource_func"
-                                        % (self.id,
-                                           self.title,
-                                           self.dashboard,
-                                           self.dashboard))
-                collected_data[slot_label] = e
-            except gevent.Timeout, t:
-                collected_data[slot_label] = t
-        # threads = [s[1] for s in slot_threads]
-        # for t in threads:
-        #     t.join(timeout=timeout)
-        #gevent.joinall([s[1] for s in slot_threads], timeout=timeout)
+            collected_data[slot_label] = st.get()
         return collected_data
 
 
@@ -72,10 +62,7 @@ class Slot(yaml.YAMLObject):
         self.datasource_func = datasource_func
 
     def collect_data(self):
-        try:
-            return self.datasource_func()
-        except Exception, e:
-            return e
+        return self.datasource_func()
 
 
 class DataSourceFunc(yaml.YAMLObject):
@@ -87,8 +74,14 @@ class DataSourceFunc(yaml.YAMLObject):
 
     def __call__(self):
         import datasources
-        func = getattr(datasources, self.func_name)
-        return func(**self.func_kwargs)
+        try:
+            res = getattr(datasources, self.func_name)(**self.func_kwargs)
+        except AttributeError:
+            message = "Datasource func <%s> does not exists" % self.func_name
+            return AttributeError(message)
+        except Exception, e:
+            return e
+        return res
 
 
 class DucksboardPusher(object):
@@ -110,22 +103,29 @@ class DucksboardPusher(object):
         all_data = dict()
         for widget, wt in widget_threads:
             data = wt.get()
-            print data.values()[0]
             if isinstance(data.values()[0], (Exception, gevent.Timeout)):
-                print "xxxxxxxxxxxxxxxxxxx"
-                print data
-                print "xxxxxxxxxxxxxxxxxxx"
-                pusher_logger.error("Widget<id=%s, title=%s, dashboard=%s>, failed to collect data. Error ==> %s" 
-                                    % (widget.id,
-                                       widget.title,
-                                       widget.dashboard,
-                                       data))
+                message = """  #########################
+                          \t\t # Widget Collect Report #
+                          \t\t #########################
+                          \t\t Widget info
+                          \t\t ------------
+                          \t\t id:%(id)s
+                          \t\t title:%(title)s
+                          \t\t dashboard:%(dashboard)s
+                          \t\t Collected data:
+                          \t\t ---------------
+                          %(data)s""" % \
+                    dict(id=widget.id,
+                         title=widget.title,
+                         dashboard=widget.dashboard,
+                         data=pformat(data, indent=12))
+                pusher_logger.error("%s" % message)
             else:
-                pusher_logger.info("Widget<id=%s, title=%s, dashboard=%s>, collected data  ==> %s" 
-                                   % (widget.id,
-                                      widget.title,
-                                      widget.dashboard,
-                                      data))
+                # pusher_logger.info("Widget<id=%s, title=%s, dashboard=%s>, collected data  ==> %s" 
+                #                    % (widget.id,
+                #                       widget.title,
+                #                       widget.dashboard,
+                #                       data))
 
                 all_data.update(data)
         return all_data
@@ -137,7 +137,7 @@ class DucksboardPusher(object):
                         for slot_label, data in collected_data.iteritems()
                         if not isinstance(data, Exception)]
         gevent.joinall(push_threads)
-        pusher_logger.info("All collected_data pushed to ducksboard")
+        #pusher_logger.info("All collected_data pushed to ducksboard")
 
     def run(self, push_interval, collectors_timeout):
         while True:
