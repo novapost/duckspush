@@ -5,6 +5,7 @@ without necessarily any relations between them
 
 import errno
 import exc
+import time                                                
 
 from duckspush import PROJECT_ROOT
 from jinja2 import Environment, PackageLoader, TemplateNotFound
@@ -38,3 +39,15 @@ def generate_template(template_name, dest, **args):
             template = env.get_template(template_name)
             template_string = template.render(**args)
             pusher_settings.write(template_string.encode("utf-8"))
+
+
+def timeit(method):
+
+    def timed(*args, **kw):
+        ts = time.time()
+        result = method(*args, **kw)
+        te = time.time()
+
+        time_msg = '%s took %s sec to run.' % (method.__name__, te-ts)
+        return (time_msg, result)
+    return timed
