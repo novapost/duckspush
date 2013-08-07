@@ -1,6 +1,6 @@
 {% for widget in widgets %}
 - !Widget
-  id: {{widget.widget.id}}
+  wid: {{widget.widget.wid}}
   kind: "{{widget.widget.kind}}"
   title: "{{widget.widget.title}}"
   dashboard: "{{widget.widget.dashboard}}"
