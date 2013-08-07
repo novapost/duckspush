@@ -29,15 +29,17 @@ collect_report_log_err_msg = """ Widget Collect Error Report
 
                                         An error occurred while collecting data.
                                         Error: %(data)s
-                            """
+                              """
 
 collect_report_log_msg = """ Widget Collect Report 
                                         #####################
 
                                         %(widget)s
 
-                                        Collected data: %(data)s
-                            """
+                                        Collected data
+                                        --------------  
+                                        %(data)s
+                         """
 
 class Widget(yaml.YAMLObject):
     yaml_tag = u'!Widget'
@@ -50,18 +52,18 @@ class Widget(yaml.YAMLObject):
         self.slots = slots
 
     def collect_slots_data(self, timeout):
-        slot_threads = [(slot.label, gevent.spawn(slot.collect_data))
+        slot_threads = [(slot, gevent.spawn(slot.collect_data))
                         for slot in self.slots]
         collected_data = dict()
-        for slot_label, st in slot_threads:
+        for slot, st in slot_threads:
             try:
-                widget_logger.debug("%s Collecting data for endpoint %s" % (self, slot_label))
+                widget_logger.debug("%s Collecting data for slot %s" % (self, slot))
                 time_msg, res = st.get(timeout=timeout)
-                collected_data[slot_label] = res
-                widget_logger.debug("%s Collected data: %s for endpoint %s" % (self, res, slot_label))
+                collected_data[slot.label] = res
+                widget_logger.debug("%s Collected data: %s for slot %s" % (self, res, slot))
                 widget_logger.debug("%s datasource_func => %s" % (self, time_msg))
             except gevent.Timeout, t:
-                collected_data[slot_label] = t
+                collected_data[slot.label] = t
         return collected_data
 
     def __str__(self):
@@ -83,6 +85,11 @@ class Slot(yaml.YAMLObject):
         return self.datasource_func()
 
 
+    def __str__(self):
+        return "Slot<subtitle: %s, label: %s, datasource: %s>" % (self.subtitle,
+                                                                  self.label,
+                                                                  self.datasource_func)
+
 class DataSourceFunc(yaml.YAMLObject):
     yaml_tag = u'!DataSourceFunc'
 
@@ -97,9 +104,7 @@ class DataSourceFunc(yaml.YAMLObject):
         except AttributeError:
             message = "Datasource func <%s> does not exists" % self.func_name
             return AttributeError(message)
-        except Exception, e:
-            return e
-        except BaseException, e:
+        except (BaseException, Exception), e:
             return e
         return res
 
@@ -343,6 +348,3 @@ def run_pusher():
         gevent.signal(signal.SIGQUIT, gevent.shutdown)
     except KeyboardInterrupt:
         pusher_logger.info("Stopping pusher")
-
-if __name__ == "__main__":
-    start_push_project()
