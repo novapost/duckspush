@@ -13,16 +13,15 @@ import yaml
 from duckspush import PACKAGE_ROOT
 from os import path
 from optparse import OptionParser
-from pprint import pformat
 from requests import HTTPError
 from shutil import rmtree
 from utils import timeit
 
 widget_logger = logging.getLogger("Widget")
 pusher_logger = logging.getLogger("Pusher")
-loggers = [ widget_logger, pusher_logger ]
+loggers = [widget_logger, pusher_logger]
 
-collect_report_log_err_msg = """ Widget Collect Error Report 
+collect_report_log_err_msg = """ Widget Collect Error Report
                                         ###########################
 
                                         %(widget)s
@@ -31,15 +30,16 @@ collect_report_log_err_msg = """ Widget Collect Error Report
                                         Error: %(data)s
                               """
 
-collect_report_log_msg = """ Widget Collect Report 
+collect_report_log_msg = """ Widget Collect Report
                                         #####################
 
                                         %(widget)s
 
                                         Collected data
-                                        --------------  
+                                        --------------
                                         %(data)s
                          """
+
 
 class Widget(yaml.YAMLObject):
     yaml_tag = u'!Widget'
@@ -57,20 +57,22 @@ class Widget(yaml.YAMLObject):
         collected_data = dict()
         for slot, st in slot_threads:
             try:
-                widget_logger.debug("%s Collecting data for slot %s" % (self, slot))
+                widget_logger.debug("%s Collecting data for slot %s"
+                                    % (self, slot))
                 time_msg, res = st.get(timeout=timeout)
                 collected_data[slot.label] = res
-                widget_logger.debug("%s Collected data: %s for slot %s" % (self, res, slot))
-                widget_logger.debug("%s datasource_func => %s" % (self, time_msg))
+                widget_logger.debug("%s Collected data: %s for slot %s"
+                                    % (self, res, slot))
+                widget_logger.debug("%s datasource_func => %s"
+                                    % (self, time_msg))
             except gevent.Timeout, t:
                 collected_data[slot.label] = t
         return collected_data
 
     def __str__(self):
-        return "Widget<id: %s, kind: %s, title: %s, dashboard: %s>" % (self.wid,
-                                                                       self.kind,
-                                                                       self.title,
-                                                                       self.dashboard)
+        return "Widget<id: %s, kind: %s, title: %s, dashboard: %s>" \
+            % (self.wid, self.kind, self.title, self.dashboard)
+
 
 class Slot(yaml.YAMLObject):
     yaml_tag = u'!Slot'
@@ -84,11 +86,10 @@ class Slot(yaml.YAMLObject):
     def collect_data(self):
         return self.datasource_func()
 
-
     def __str__(self):
-        return "Slot<subtitle: %s, label: %s, datasource: %s>" % (self.subtitle,
-                                                                  self.label,
-                                                                  self.datasource_func)
+        return "Slot<subtitle: %s, label: %s, datasource: %s>" \
+            % (self.subtitle, self.label, self.datasource_func)
+
 
 class DataSourceFunc(yaml.YAMLObject):
     yaml_tag = u'!DataSourceFunc'
@@ -96,7 +97,7 @@ class DataSourceFunc(yaml.YAMLObject):
     def __init__(self, func_name, func_kwargs):
         self.func_name = func_name
         self.func_kwargs = func_kwargs
-      
+
     def __call__(self):
         import datasources
         try:
@@ -128,7 +129,8 @@ class DucksboardPusher(object):
         all_data = dict()
         for widget, wt in widget_threads:
             data = wt.get()
-            if isinstance(data.values()[0], (BaseException, Exception, gevent.Timeout)):
+            if isinstance(data.values()[0],
+                          (BaseException, Exception, gevent.Timeout)):
                 pusher_logger.error("%s" % collect_report_log_err_msg
                                     % dict(widget=widget,
                                            data=data))
@@ -144,8 +146,8 @@ class DucksboardPusher(object):
         try:
             resp = self.push_api_cli.push_value(id=sid, data=data)
         except HTTPError, e:
-            pusher_logger.error("Problem while pushing to %s  => %s" % (e.response.request.url,
-                                                                        e))
+            pusher_logger.error("Problem while pushing to %s  => %s"
+                                % (e.response.request.url, e))
             resp = e
         return resp
 
@@ -185,13 +187,18 @@ def start_push_project():
                       type="int",
                       dest="limit",
                       help="Limit number of collected widgets",)
-
+    ## Todo
+    # parser.add_option("-p", "--datasources-path",
+    #                   action="store",
+    #                   type="string",
+    #                   dest="datasources_module",
+    #                   help="Path of module containing datasources",)
     (options, args) = parser.parse_args()
 
     if len(args) != 2:
         parser.error("wrong number of arguments")
         print parser.usage
-    
+
     duckspush_settings_path = path.join(PACKAGE_ROOT,
                                         "duckspush_settings.yaml")
     project_name = args[0]
@@ -203,7 +210,7 @@ def start_push_project():
         pass
     else:
         if proj:
-            sys.exit("A project already exist under this name.Please choose an other one")
+            sys.exit("A project already exist under this name.")
 
     api_key = args[1]
     dashboard_api_cli = api.get_api_cli(api_key, "dashboard")
@@ -316,7 +323,8 @@ def run_pusher():
         parser.error("wrong number of arguments")
         print parser.usage
 
-    formatter = logging.Formatter('[%(name)s|%(asctime)s|%(levelname)s]:%(message)s')
+    formatter = logging.Formatter(
+        '[%(name)s|%(asctime)s|%(levelname)s]:%(message)s')
     handler = logging.StreamHandler()
     handler.setFormatter(formatter)
 
@@ -325,7 +333,8 @@ def run_pusher():
         try:
             l.setLevel(getattr(logging, options.log_level.upper()))
         except AttributeError:
-            sys.exit("Unknow log_level: %s.Please set a correct one" % options.log_level)
+            sys.exit("Unknow log_level: %s.Please set a correct one"
+                     % options.log_level)
         l.addHandler(handler)
 
     duckspush_settings_path = path.join(PACKAGE_ROOT,
