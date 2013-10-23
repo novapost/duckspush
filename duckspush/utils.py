@@ -4,12 +4,10 @@ without necessarily any relations between them
 """
 
 import errno
-import exc
-import time                                                
+import time
 
-from duckspush import PROJECT_ROOT
 from jinja2 import Environment, PackageLoader, TemplateNotFound
-from os import path, makedirs, getcwd
+from os import path, makedirs
 
 
 def mkdir_p(p):
@@ -22,7 +20,8 @@ def mkdir_p(p):
     except OSError as e:
         if e.errno == errno.EEXIST and path.isdir(p):
             pass
-        else: raise
+        else:
+            raise
 
 
 def generate_template(template_name, dest, **args):
