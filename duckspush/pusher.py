@@ -187,6 +187,12 @@ def start_push_project():
                       type="int",
                       dest="limit",
                       help="Limit number of collected widgets",)
+    parser.add_option("-c", "--config",
+                      action="store",
+                      type="str",
+                      dest="config",
+                      help="Location of configuration file",
+                      default="duckspush_settings.yaml")
     ## Todo
     # parser.add_option("-p", "--datasources-path",
     #                   action="store",
@@ -199,8 +205,7 @@ def start_push_project():
         parser.error("wrong number of arguments")
         print parser.usage
 
-    duckspush_settings_path = path.join(PACKAGE_ROOT,
-                                        "duckspush_settings.yaml")
+    duckspush_settings_path = options.config
     project_name = args[0]
     try:
         with open(duckspush_settings_path) as f:
@@ -270,14 +275,19 @@ def start_push_project():
 def remove_push_project():
     parser = OptionParser(usage="usage: %prog <project_name>",
                           version="%prog 1.0")
+    parser.add_option("-c", "--config",
+                      action="store",
+                      type="str",
+                      dest="config",
+                      help="Location of configuration file",
+                      default="duckspush_settings.yaml")
 
     (options, args) = parser.parse_args()
     if len(args) != 1:
         parser.error("wrong number of arguments")
         print parser.usage
 
-    duckspush_settings_path = path.join(PACKAGE_ROOT,
-                                        "duckspush_settings.yaml")
+    duckspush_settings_path = options.config
 
     with open(duckspush_settings_path) as f:
         settings_data = f.read()
@@ -304,7 +314,7 @@ def run_pusher():
                       type="int",
                       default=30,
                       help="Push data interval => sec")
-    parser.add_option("-c", "--collectors_timeout",
+    parser.add_option("-t", "--collectors_timeout",
                       action="store",
                       dest="timeout",
                       type="int",
@@ -316,6 +326,12 @@ def run_pusher():
                       type="str",
                       default="INFO",
                       help="Timeout for data collection",)
+    parser.add_option("-c", "--config",
+                      action="store",
+                      type="str",
+                      dest="config",
+                      help="Location of configuration file",
+                      default="duckspush_settings.yaml")
 
     (options, args) = parser.parse_args()
 
@@ -337,8 +353,7 @@ def run_pusher():
                      % options.log_level)
         l.addHandler(handler)
 
-    duckspush_settings_path = path.join(PACKAGE_ROOT,
-                                        "duckspush_settings.yaml")
+    duckspush_settings_path = options.config
     project_name = args[0]
     with open(duckspush_settings_path) as f:
         settings_data = f.read()
