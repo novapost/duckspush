@@ -10,7 +10,6 @@ import time
 import utils
 import yaml
 
-from duckspush import PACKAGE_ROOT
 from os import path
 from optparse import OptionParser
 from requests import HTTPError
@@ -22,23 +21,23 @@ pusher_logger = logging.getLogger("Pusher")
 loggers = [widget_logger, pusher_logger]
 
 collect_report_log_err_msg = """ Widget Collect Error Report
-                                        ###########################
+                                    ###########################
 
-                                        %(widget)s
+                                    %(widget)s
 
-                                        An error occurred while collecting data.
-                                        Error: %(data)s
-                              """
+                                    An error occurred while collecting data.
+                                    Error: %(data)s
+                          """
 
 collect_report_log_msg = """ Widget Collect Report
-                                        #####################
+                                    #####################
 
-                                        %(widget)s
+                                    %(widget)s
 
-                                        Collected data
-                                        --------------
-                                        %(data)s
-                         """
+                                    Collected data
+                                    --------------
+                                    %(data)s
+                     """
 
 
 class Widget(yaml.YAMLObject):
